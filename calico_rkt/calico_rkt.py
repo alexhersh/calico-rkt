@@ -87,12 +87,16 @@ def delete(container_id):
                       container_id=container_id,
                       client=_datastore_client)
 
-    # Delete profile
-    try:
-        _datastore_client.remove_profile(INPUT_JSON['name'])
-    except:
-        print_stderr("Cannot remove profile %s; Profile cannot be found." % container_id)
-        sys.exit(1)
+    profile_name = INPUT_JSON['name']
+
+    # Delete profile if only member
+    if _datastore_client.profile_exists(profile_name) and \
+       len(_datastore_client.get_profile_members(profile_name)) <= 1:
+        try:
+            _datastore_client.remove_profile(profile_name)
+        except:
+            print_stderr("Cannot remove profile %s; Profile cannot be found." % container_id)
+            sys.exit(1)
 
 def _create_calico_endpoint(container_id, netns_path, client):
     """
@@ -163,10 +167,12 @@ def _container_remove(hostname, orchestrator_id, container_id, client):
         print_stderr("Container %s doesn't contain any endpoints" % container_id)
         sys.exit(1)
 
+    pool = INPUT_JSON['ipam']['subnet']
+
     # Remove any IP address assignments that this endpoint has
     for net in endpoint.ipv4_nets | endpoint.ipv6_nets:
         assert(net.size == 1)
-        client.unassign_address(None, net.ip)
+        client.unassign_address(IPNetwork(pool), net.ip)
 
     # Remove the endpoint
     netns.remove_veth(endpoint.name)
