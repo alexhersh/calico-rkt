@@ -17,15 +17,13 @@ from pycalico.datastore_errors import PoolNotFound
 
 print_stderr = functools.partial(print, file=sys.stderr)
 
-
-input_ = ''.join(sys.stdin.readlines()).replace('\n', '')
-input_json = json.loads(input_)
-
 # Append to existing env, to avoid losing PATH etc.
 # TODO-PAT: This shouldn't be hardcoded
 env = os.environ.copy()
 ETCD_AUTHORITY_ENV = 'ETCD_AUTHORITY'
 env[ETCD_AUTHORITY_ENV] = 'localhost:2379'
+
+INPUT_JSON = dict()
 
 # PROFILE_LABEL = 'CALICO_PROFILE'
 # ETCD_PROFILE_PATH = '/calico/'
@@ -36,6 +34,12 @@ NETNS_ROOT= '/var/lib/rkt/pods/run'
 
 def main():
     mode = env['CNI_COMMAND']
+    input_ = ''.join(sys.stdin.readlines()).replace('\n', '')
+    INPUT_JSON = json.loads(input_)
+
+    print_stderr('Args: ', sys.argv)
+    print_stderr('Env: ', env)
+    print_stderr('Input: ', INPUT_JSON)
 
     if mode == 'init':
         print_stderr('No initialization work to perform')
@@ -62,7 +66,7 @@ def create(container_id):
                                             client=_datastore_client)
 
         _create_profile(endpoint=endpoint, 
-                        profile_name=input_json['name'], 
+                        profile_name=INPUT_JSON['name'], 
                         ip=ip,
                         client=_datastore_client)
     except CalledProcessError as e:
@@ -85,34 +89,21 @@ def delete(container_id):
 
     # Delete profile
     try:
-        _datastore_client.remove_profile(input_json['name'])
+        _datastore_client.remove_profile(INPUT_JSON['name'])
     except:
         print_stderr("Cannot remove profile %s; Profile cannot be found." % container_id)
 
 def _create_calico_endpoint(container_id, netns_path, client):
-    """Configure the Calico interface for a pod."""
+    """
+    Configure the Calico interface for a pod.
+    Return Endpoint and IP
+    """
     print_stderr('Configuring Calico networking.', file=sys.stderr)
 
-    interface = env['CNI_IFNAME']
-
-    endpoint, ip = _container_add(hostname=HOSTNAME,
-                                orchestrator_id=ORCHESTRATOR_ID,
-                                container_id=container_id,
-                                netns_path=netns_path,
-                                interface=interface,
-                                client=client)
-    print_stderr('Finished configuring network interface', file=sys.stderr)
-    return endpoint, ip
-
-def _container_add(hostname, orchestrator_id, container_id, netns_path, interface, client):
-    """
-    Add a container to Calico networking with the given IP
-    Return Endpoint object
-    """
     try:
         _ = client.get_endpoint(
-            hostname=hostname,
-            orchestrator_id=orchestrator_id,
+            hostname=HOSTNAME,
+            orchestrator_id=ORCHESTRATOR_ID,
             workload_id=container_id
         )
     except KeyError:
@@ -122,17 +113,34 @@ def _container_add(hostname, orchestrator_id, container_id, netns_path, interfac
         print_stderr("This container has already been configured with Calico Networking.")
         sys.exit(1)
 
+    interface = env['CNI_IFNAME']
+
+    endpoint, ip = _container_add(hostname=HOSTNAME,
+                                orchestrator_id=ORCHESTRATOR_ID,
+                                container_id=container_id,
+                                netns_path=netns_path,
+                                interface=interface,
+                                client=client)
+
+    print_stderr('Finished configuring network interface', file=sys.stderr)
+    return endpoint, ip
+
+def _container_add(hostname, orchestrator_id, container_id, netns_path, interface, client):
+    """
+    Add a container to Calico networking
+    Return Endpoint object and IP
+    """
     # Allocate and Assign ip address through IPAM Client
     ip = _allocate_IP()
 
     # Create Endpoint object
     try:
         ep = client.create_endpoint(HOSTNAME, ORCHESTRATOR_ID,
-                                      container_id, [IPAddress(ip)])
+                                      container_id, [ip])
     except AddrFormatError:
         print_stderr("This node is not configured for IPv%d. Unassigning IP "\
                       "address %s then exiting."  % ip.version, ip)
-        client.unassign_address(IPNetwork(input_json['ipam']['subnet']), ip)
+        client.unassign_address(IPNetwork(INPUT_JSON['ipam']['subnet']), ip)
         sys.exit(1)
 
     # Create the veth, move into the container namespace, add the IP and
@@ -240,10 +248,10 @@ def _allocate_IP():
     """
     Determine next available IP for pool in input_ and assign it
     """
-    pool = input_json['ipam']['subnet']
+    pool = INPUT_JSON['ipam']['subnet']
     candidate = SequentialAssignment().allocate(IPNetwork(pool))
     print_stderr("Using IP %s" % candidate)
-    return candidate
+    return IPAddress(candidate)
 
 if __name__ == '__main__':
     main()
