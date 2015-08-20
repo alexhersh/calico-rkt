@@ -4,7 +4,7 @@ BUILD_DIR=build_calico_rkt
 BUILD_FILES=Dockerfile requirements.txt
 
 default: all
-all: binary test
+all: test
 binary: dist/calico_rkt
 test: ut
 
