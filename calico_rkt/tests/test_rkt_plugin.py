@@ -40,9 +40,12 @@ ENV = {
 
 class RktPluginTest(unittest.TestCase):
 
-    @patch('calico_rkt.env', autospec=True)
-    @patch('sys.stdin',  autospec=True)
-    @patch('calico_rkt.create', autospec=True)
+    @patch('calico_rkt.env', 
+        autospec=True)
+    @patch('sys.stdin',  
+        autospec=True)
+    @patch('calico_rkt.create', 
+        autospec=True)
     def test_main_ADD(self, m_create, m_stdin, m_env):
         ENV['CNI_COMMAND'] = 'ADD'
         m_env.__getitem__.side_effect = lambda x: ENV[x]
@@ -52,9 +55,12 @@ class RktPluginTest(unittest.TestCase):
 
         m_create.assert_called_once_with(container_id=CONTAINER_ID)
 
-    @patch('calico_rkt.env', autospec=True)
-    @patch('sys.stdin',  autospec=True)
-    @patch('calico_rkt.delete', autospec=True)
+    @patch('calico_rkt.env', 
+        autospec=True)
+    @patch('sys.stdin',  
+        autospec=True)
+    @patch('calico_rkt.delete', 
+        autospec=True)
     def test_main_DEL(self, m_delete, m_stdin, m_env):
         ENV['CNI_COMMAND'] = 'DEL'
         m_env.__getitem__.side_effect = lambda x: ENV[x]
@@ -64,8 +70,9 @@ class RktPluginTest(unittest.TestCase):
 
         m_delete.assert_called_once_with(container_id=CONTAINER_ID)
 
-    @patch('calico_rkt.env', autospec=True)
     @patch('calico_rkt.INPUT_JSON', json.loads(STDIN))
+    @patch('calico_rkt.env', 
+        autospec=True)
     @patch('calico_rkt.IPAMClient', return_value='CLIENT',
            autospec=True)
     @patch('calico_rkt._create_calico_endpoint',
@@ -88,12 +95,14 @@ class RktPluginTest(unittest.TestCase):
                                             netns_path=path_,
                                             client='CLIENT')
         m_create_profile.assert_called_once_with(endpoint=mock_ep,
-                                                profile_name="test",
-                                                ip=ip_,
-                                                client='CLIENT')
-    @patch("sys.exit", autospec=True)
-    @patch('calico_rkt.env', autospec=True)
+                                                 profile_name="test",
+                                                 ip=ip_,
+                                                 client='CLIENT')
     @patch('calico_rkt.INPUT_JSON', json.loads(STDIN))
+    @patch("sys.exit", 
+        autospec=True)
+    @patch('calico_rkt.env', 
+        autospec=True)
     @patch('calico_rkt.IPAMClient', return_value='CLIENT',
            autospec=True)
     @patch('calico_rkt._create_calico_endpoint',
@@ -117,12 +126,13 @@ class RktPluginTest(unittest.TestCase):
                                             netns_path=path_,
                                             client='CLIENT')
         m_create_profile.assert_called_once_with(endpoint=mock_ep,
-                                                profile_name="test",
-                                                ip=ip_,
-                                                client='CLIENT')
+                                                 profile_name="test",
+                                                 ip=ip_,
+                                                 client='CLIENT')
         m_sys_exit.assert_called_once_with(1)
 
-    @patch('calico_rkt.env', autospec=True)
+    @patch('calico_rkt.env', 
+        autospec=True)
     @patch('calico_rkt.HOSTNAME',
         autospec=True)
     @patch('calico_rkt._container_add', return_value=('ep', 'ip'),
@@ -137,21 +147,23 @@ class RktPluginTest(unittest.TestCase):
         id_, path_ = 'testcontainer', 'path/to/ns'
 
         calico_rkt._create_calico_endpoint(container_id=id_,
-                                        netns_path=path_,
-                                        client=m_client)
+                                           netns_path=path_,
+                                           client=m_client)
 
         m_client.get_endpoint.assert_called_once_with(hostname=m_host,
-                                                    orchestrator_id=ORCHESTRATOR_ID,
-                                                    workload_id=id_)
+                                                      orchestrator_id=ORCHESTRATOR_ID,
+                                                      workload_id=id_)
         m_con_add.assert_called_once_with(hostname=m_host,
-                                        orchestrator_id=ORCHESTRATOR_ID,
-                                        container_id=id_,
-                                        netns_path=path_,
-                                        interface=ENV['CNI_IFNAME'],
-                                        client=m_client)
+                                          orchestrator_id=ORCHESTRATOR_ID,
+                                          container_id=id_,
+                                          netns_path=path_,
+                                          interface=ENV['CNI_IFNAME'],
+                                          client=m_client)
 
-    @patch("sys.exit", autospec=True)
-    @patch('calico_rkt.env', autospec=True)
+    @patch("sys.exit", 
+        autospec=True)
+    @patch('calico_rkt.env', 
+        autospec=True)
     @patch('calico_rkt.HOSTNAME',
         autospec=True)
     @patch('calico_rkt._container_add', return_value=('ep', 'ip'),
@@ -165,12 +177,12 @@ class RktPluginTest(unittest.TestCase):
         id_, path_ = 'testcontainer', 'path/to/ns'
 
         calico_rkt._create_calico_endpoint(container_id=id_,
-                                        netns_path=path_,
-                                        client=m_client)
+                                           netns_path=path_,
+                                           client=m_client)
 
         m_client.get_endpoint.assert_called_once_with(hostname=m_host,
-                                                    orchestrator_id=ORCHESTRATOR_ID,
-                                                    workload_id=id_)
+                                                      orchestrator_id=ORCHESTRATOR_ID,
+                                                      workload_id=id_)
         m_sys_exit.assert_called_once_with(1)
 
     @patch('calico_rkt.HOSTNAME',
@@ -186,21 +198,77 @@ class RktPluginTest(unittest.TestCase):
         id_, path_ = 'testcontainer', 'path/to/ns'
 
         calico_rkt._container_add(hostname=m_host,
-                                orchestrator_id=ORCHESTRATOR_ID,
-                                container_id=id_,
-                                netns_path=path_,
-                                interface=ENV['CNI_IFNAME'],
-                                client=m_client)
+                                  orchestrator_id=ORCHESTRATOR_ID,
+                                  container_id=id_,
+                                  netns_path=path_,
+                                  interface=ENV['CNI_IFNAME'],
+                                  client=m_client)
 
         m_client.create_endpoint.assert_called_once_with(m_host, ORCHESTRATOR_ID, id_, [IPAddress('1.2.3.4')])
         m_ep.provision_veth.assert_called_once()
         m_client.set_endpoint.assert_called_once_with(m_ep)
 
+    @patch('calico_rkt.INPUT_JSON', json.loads(STDIN))
     @patch('calico_rkt.HOSTNAME',
         autospec=True)
     @patch('pycalico.netns',
         autospec=True)
     def test_container_remove(self, m_netns, m_host):
         m_client = Mock()
+
         m_ep = Mock()
+        m_ep.ipv4_nets = set()
+        m_ep.ipv4_nets.add(IPNetwork('1.2.3.4/32'))
+        m_ep.ipv6_nets = set()
+        m_ep.name = 'endpoint_test'
+
         m_client.get_endpoint.return_value = m_ep
+        id_ = '123'
+
+        calico_rkt._container_remove(hostname=m_host,
+                                     orchestrator_id=ORCHESTRATOR_ID,
+                                     container_id=id_,
+                                     client=m_client)
+        m_client.get_endpoint.assert_called_once_with(hostname=m_host,
+                                                      orchestrator_id=ORCHESTRATOR_ID,
+                                                      workload_id=id_)
+        m_client.remove_workload.assert_called_once_with(hostname=m_host,
+                                                         orchestrator_id=ORCHESTRATOR_ID,
+                                                         workload_id=id_)
+        m_client.unassign_address.assert_called_once_with(IPNetwork("10.22.0.0/16"), IPAddress('1.2.3.4'))
+
+
+    def test_create_profile(self):
+        m_client = Mock()
+        m_client.profile_exists.return_value = False
+
+        m_ep = Mock()
+        m_ep.endpoint_id = '1234'
+
+        p_name, ip_ = 'profile', '1.2.3.4'
+
+        calico_rkt._create_profile(endpoint=m_ep,
+                                   profile_name=p_name,
+                                   ip=ip_,
+                                   client=m_client)
+
+        m_client.profile_exists.assert_called_once_with(p_name)
+        m_client.create_profile.assert_called_once_with(p_name)
+        m_client.set_profiles_on_endpoint.assert_called_once_with(profile_names=[p_name], 
+                                                                  endpoint_id='1234')
+
+    @patch('calico_rkt._create_rules',
+        autospec=True)
+    def test_create_apply_rules(self, m_create_rules):
+        m_client = Mock()
+        m_profile = Mock()
+        m_client.get_profile.return_value = m_profile
+
+        p_name = 'profile'
+
+        calico_rkt._apply_rules(profile_name=p_name,
+                                client=m_client)
+
+        m_client.profile_exists.get_profile(p_name)
+        m_create_rules.assert_called_once_with(p_name)
+        m_client.profile_update_rules.assert_called_once_with(m_profile)
