@@ -151,7 +151,6 @@ def _container_add(hostname, orchestrator_id, container_id, netns_path, interfac
     ep.mac = ep.provision_veth(Namespace(netns_path), interface)
     client.set_endpoint(ep)
 
-    # Let the caller know what endpoint was created.
     return ep, ip
 
 def _container_remove(hostname, orchestrator_id, container_id, client):
@@ -178,7 +177,9 @@ def _container_remove(hostname, orchestrator_id, container_id, client):
     netns.remove_veth(endpoint.name)
 
     # Remove the container from the datastore.
-    client.remove_workload(hostname, orchestrator_id, container_id)
+    client.remove_workload(hostname=hostname, 
+                           orchestrator_id=orchestrator_id, 
+                           workload_id=container_id)
 
     print_stderr("Removed Calico interface from %s" % container_id)
 
@@ -208,12 +209,12 @@ def _create_profile(endpoint, profile_name, ip, client):
         })
     print(dump)
 
-def _create_rules(id_):
+def _create_rules(profile):
     """
     Create a json dict of rules for calico profiles
     """
     rules_dict = {
-        "id": id_,
+        "id": profile,
         "inbound_rules": [
             {
                 "action": "allow",
