@@ -1,7 +1,7 @@
 .PHONY: all binary ut clean
 
 BUILD_DIR=build_calico_rkt
-BUILD_FILES=Dockerfile requirements.txt
+BUILD_FILES=$(BUILD_DIR)/Dockerfile $(BUILD_DIR)/requirements.txt
 
 default: all
 all: test
@@ -10,7 +10,7 @@ test: ut
 
 # Build a new docker image to be used by binary or tests
 rktbuild.created: $(BUILD_FILES)
-	docker build -t calico/rkt-build .
+	cd build_calico_rkt; docker build -t calico/rkt-build .
 	touch rktbuild.created
 
 dist/calico_rkt: rktbuild.created
@@ -29,8 +29,8 @@ ut: dist/calico_rkt
 	docker run --rm -v `pwd`/calico_rkt:/code/calico_rkt \
 	-v `pwd`/nose.cfg:/code/nose.cfg \
 	calico/rkt-build bash -c \
-	'/tmp/etcd -data-dir=/tmp/default.etcd/ >/dev/null 2>&1 & \
-	PYTHONPATH=/code/calico_rkt nosetests calico_rkt/tests -c nose.cfg'
+	'>/dev/null 2>&1 & PYTHONPATH=/code/calico_rkt \
+	nosetests calico_rkt/tests -c nose.cfg'
 
 clean:
 	-rm -f *.created
