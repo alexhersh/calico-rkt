@@ -247,7 +247,6 @@ def _allocate_IP():
     """
     Determine next available IP for pool in input_ and assign it
     """
-    print_stderr(INPUT_JSON)
     pool = INPUT_JSON['ipam']['subnet']
     candidate = SequentialAssignment().allocate(IPNetwork(pool))
     print_stderr("Using IP %s" % candidate)
