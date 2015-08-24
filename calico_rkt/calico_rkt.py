@@ -41,10 +41,6 @@ NETNS_ROOT = '/var/lib/rkt/pods/run'
 def main():
     mode = env['CNI_COMMAND']
 
-    print_stderr('Args: ', sys.argv)
-    print_stderr('Env: ', env)
-    print_stderr('Input: ', INPUT_JSON)
-
     if mode == 'init':
         print_stderr('No initialization work to perform')
     elif mode == 'ADD':
