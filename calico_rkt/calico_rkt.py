@@ -24,7 +24,7 @@ from netaddr import IPAddress, IPNetwork, AddrFormatError
 from pycalico import netns
 from pycalico.ipam import IPAMClient, SequentialAssignment
 from pycalico.netns import Namespace
-from pycalico.datastore_datatypes import Rules
+from pycalico.datastore_datatypes import Rules, IPPool
 from pycalico.datastore import IF_PREFIX, DatastoreClient
 from pycalico.datastore_errors import PoolNotFound
 
@@ -87,11 +87,12 @@ def delete(container_id):
 
     # Delete profile if only member
     if _datastore_client.profile_exists(profile_name) and \
-       len(_datastore_client.get_profile_members(profile_name)) <= 1:
+       len(_datastore_client.get_profile_members(profile_name)) < 1:
         try:
+            print_stderr("Profile %s is empty, removing from datastore" % profile_name)
             _datastore_client.remove_profile(profile_name)
         except:
-            print_stderr("Cannot remove profile %s; Profile cannot be found." % container_id)
+            print_stderr("ERROR: Cannot remove profile %s; Profile cannot be found." % container_id)
             sys.exit(1)
 
 def _create_calico_endpoint(container_id, netns_path, client):
@@ -130,16 +131,17 @@ def _container_add(hostname, orchestrator_id, container_id, netns_path, interfac
     Return Endpoint object and newly allocated IP
     """
     # Allocate and Assign ip address through IPAM Client
-    ip = _allocate_IP()
+    pool = _generate_pool(client)
+    ip = _allocate_IP(pool)
 
     # Create Endpoint object
     try:
         ep = client.create_endpoint(HOSTNAME, ORCHESTRATOR_ID,
                                       container_id, [ip])
     except AddrFormatError:
-        print_stderr("This node is not configured for IPv%d. Unassigning IP "\
+        print_stderr("ERROR: This node is not configured for IPv%d. Unassigning IP "\
                       "address %s then exiting."  % ip.version, ip)
-        client.unassign_address(IPNetwork(INPUT_JSON['ipam']['subnet']), ip)
+        client.unassign_address(pool, ip)
         sys.exit(1)
 
     # Create the veth, move into the container namespace, add the IP and
@@ -159,15 +161,15 @@ def _container_remove(hostname, orchestrator_id, container_id, client):
                                        orchestrator_id=orchestrator_id,
                                        workload_id=container_id)
     except KeyError:
-        print_stderr("Container %s doesn't contain any endpoints" % container_id)
+        print_stderr("ERROR: Container %s doesn't contain any endpoints" % container_id)
         sys.exit(1)
 
-    pool = INPUT_JSON['ipam']['subnet']
+    pool = _generate_pool(client)
 
     # Remove any IP address assignments that this endpoint has
     for net in endpoint.ipv4_nets | endpoint.ipv6_nets:
         assert(net.size == 1)
-        client.unassign_address(IPNetwork(pool), net.ip)
+        client.unassign_address(pool, net.ip)
 
     # Remove the endpoint
     netns.remove_veth(endpoint.name)
@@ -236,25 +238,48 @@ def _apply_rules(profile_name, client):
     try:
         profile = client.get_profile(profile_name)
     except:
-        print_stderr("Error: Could not apply rules. Profile not found: %s, exiting" % profile_name)
+        print_stderr("ERROR: Could not apply rules. Profile not found: %s, exiting" % profile_name)
         sys.exit(1)
 
     profile.rules = _create_rules(profile_name)
     client.profile_update_rules(profile)
     print_stderr("Finished applying rules.")
 
-def _allocate_IP():
+
+def _generate_pool(client, create_pool=True):
     """
-    Determine next available IP for pool in input_ and assign it
+    Take Input subnet (global), create IP pool in datastore
+    Will complete silently if it exists
+    return IPPool  object of subnet pool
     """
-    pool = INPUT_JSON['ipam']['subnet']
-    candidate = SequentialAssignment().allocate(IPNetwork(pool))
+    try:
+        subnet = INPUT_JSON['ipam']['subnet']
+    except KeyError:
+        print_stderr("ERROR: Pool not specified in config")
+        sys.exit(1)
+
+    pool = IPPool(subnet)
+    version = IPNetwork(subnet).version
+
+    client.add_ip_pool(version, pool)
+    print_stderr("Using Pool %s" % pool)
+
+    return pool
+
+def _allocate_IP(pool):
+    """
+    Determine next available IP for given pool and assign it
+    :param IPPool or IPNetwork pool: The pool to get assignments for.
+    :return: The next avail address from the pool
+    :rtype IPAddress object
+    """
+    candidate = SequentialAssignment().allocate(pool)
     print_stderr("Using IP %s" % candidate)
     return IPAddress(candidate)
 
 if __name__ == '__main__':
     env = os.environ.copy()
-    env[ETCD_AUTHORITY_ENV] = 'localhost:2379'
+    env[ETCD_AUTHORITY_ENV] = 'localhost:2379'  if ETCD_AUTHORITY_ENV not in env.keys() else env[ETCD_AUTHORITY_ENV]
 
     input_ = ''.join(sys.stdin.readlines()).replace('\n', '')
     INPUT_JSON = json.loads(input_).copy()
