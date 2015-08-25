@@ -30,52 +30,54 @@ from pycalico.datastore_datatypes import Rules, IPPool
 from pycalico.datastore import IF_PREFIX, DatastoreClient
 from pycalico.datastore_errors import PoolNotFound
 
-logger = logging.getLogger(__name__)
+_log = logging.getLogger(__name__)
 
 ETCD_AUTHORITY_ENV = 'ETCD_AUTHORITY'
-
-env, INPUT_JSON = {}, {}
 
 ORCHESTRATOR_ID = "rkt"
 HOSTNAME = socket.gethostname()
 NETNS_ROOT = '/var/lib/rkt/pods/run'
 
-def main():
+def main(env, conf_in):
     mode = env['CNI_COMMAND']
 
-    if mode == 'init':
-        logger.info('No initialization work to perform')
-    elif mode == 'ADD':
-        logger.info('Executing Calico pod-creation plugin')
-        create(container_id=env['CNI_CONTAINERID'])
+    if mode == 'ADD':
+        create(env=env, conf_in=conf_in)
     elif mode == 'DEL':
-        logger.info('Executing Calico pod-deletion plugin')
-        delete(container_id=env['CNI_CONTAINERID'])
+        delete(env=env, conf_in=conf_in)
 
-def create(container_id):
+def create(env, conf_in):
     """"Handle rkt pod-create event."""
-    logger.info('Configuring pod %s' % container_id)
+    container_id = env['CNI_CONTAINERID']
+
+    _log.info('Configuring pod %s' % container_id)
     netns_path='%s/%s/%s' % (NETNS_ROOT, container_id, env['CNI_NETNS'])
     _datastore_client = IPAMClient()
 
     try:
         endpoint, ip = _create_calico_endpoint(container_id=container_id,
                                                netns_path=netns_path,
-                                               client=_datastore_client)
+                                               client=_datastore_client,
+                                               conf_in=conf_in,
+                                               interface = env['CNI_IFNAME'])
 
-        _create_profile(endpoint=endpoint,
-                        profile_name=INPUT_JSON['name'],
+        _set_profile_on_endpoint(endpoint=endpoint,
+                        profile_name=conf_in['name'],
                         ip=ip,
                         client=_datastore_client)
     except CalledProcessError as e:
-        logger.info('Error code %d creating pod networking: %s\n%s' % (
+        _log.error('ERROR: error code %d creating pod networking: %s\n%s' % (
             e.returncode, e.output, e))
         sys.exit(1)
-    logger.info('Finished Creating pod %s' % container_id)
 
-def delete(container_id):
+    _log.info('Finished Creating pod %s' % container_id)
+
+def delete(env, conf_in):
     """Cleanup after a pod."""
-    logger.info('Deleting pod %s' % container_id)
+
+    container_id = env['CNI_CONTAINERID']
+
+    _log.info('Deleting pod %s' % container_id)
 
     _datastore_client = IPAMClient()
 
@@ -85,24 +87,24 @@ def delete(container_id):
                       container_id=container_id,
                       client=_datastore_client)
 
-    profile_name = INPUT_JSON['name']
+    profile_name = conf_in['name']
 
     # Delete profile if only member
     if _datastore_client.profile_exists(profile_name) and \
        len(_datastore_client.get_profile_members(profile_name)) < 1:
         try:
-            logger.info("Profile %s has no members, removing from datastore" % profile_name)
+            _log.info("Profile %s has no members, removing from datastore" % profile_name)
             _datastore_client.remove_profile(profile_name)
         except:
-            logger.info("ERROR: Cannot remove profile %s; Profile cannot be found." % container_id)
+            _log.error("ERROR: Cannot remove profile %s: Profile cannot be found." % container_id)
             sys.exit(1)
 
-def _create_calico_endpoint(container_id, netns_path, client):
+def _create_calico_endpoint(container_id, netns_path, client, conf_in, interface):
     """
     Configure the Calico interface for a pod.
     Return Endpoint and IP
     """
-    logger.info('Configuring Calico networking.')
+    _log.info('Configuring Calico networking.')
 
     try:
         _ = client.get_endpoint(hostname=HOSTNAME,
@@ -112,36 +114,35 @@ def _create_calico_endpoint(container_id, netns_path, client):
         # Calico doesn't know about this container.  Continue.
         pass
     else:
-        logger.info("This container has already been configured with Calico Networking.")
+        _log.error("ERROR: This container has already been configured with Calico Networking.")
         sys.exit(1)
-
-    interface = env['CNI_IFNAME']
 
     endpoint, ip = _container_add(hostname=HOSTNAME,
                                   orchestrator_id=ORCHESTRATOR_ID,
                                   container_id=container_id,
                                   netns_path=netns_path,
                                   interface=interface,
-                                  client=client)
+                                  client=client,
+                                  conf_in=conf_in)
 
-    logger.info('Finished configuring network interface')
+    _log.info('Finished configuring network interface')
     return endpoint, ip
 
-def _container_add(hostname, orchestrator_id, container_id, netns_path, interface, client):
+def _container_add(hostname, orchestrator_id, container_id, netns_path, interface, client, conf_in):
     """
     Add a container to Calico networking
     Return Endpoint object and newly allocated IP
     """
     # Allocate and Assign ip address through IPAM Client
-    pool = _generate_pool(client)
-    ip = _allocate_IP(pool)
+    pool = _generate_pool(client, conf_in)
+    ip = _allocate_ip(pool)
 
     # Create Endpoint object
     try:
         ep = client.create_endpoint(HOSTNAME, ORCHESTRATOR_ID,
                                       container_id, [ip])
     except AddrFormatError:
-        logger.info("ERROR: This node is not configured for IPv%d. Unassigning IP "\
+        _log.error("ERROR: This node is not configured for IPv%d. Unassigning IP "\
                       "address %s then exiting."  % ip.version, ip)
         client.unassign_address(pool, ip)
         sys.exit(1)
@@ -163,7 +164,7 @@ def _container_remove(hostname, orchestrator_id, container_id, client):
                                        orchestrator_id=orchestrator_id,
                                        workload_id=container_id)
     except KeyError:
-        logger.info("ERROR: Container %s doesn't contain any endpoints" % container_id)
+        _log.error("ERROR: Container %s doesn't contain any endpoints" % container_id)
         sys.exit(1)
 
     # Remove any IP address assignments that this endpoint has
@@ -179,21 +180,21 @@ def _container_remove(hostname, orchestrator_id, container_id, client):
                            orchestrator_id=orchestrator_id, 
                            workload_id=container_id)
 
-    logger.info("Removed Calico interface from %s" % container_id)
+    _log.info("Removed Calico interface from %s" % container_id)
 
-def _create_profile(endpoint, profile_name, ip, client):
+def _set_profile_on_endpoint(endpoint, profile_name, ip, client):
     """
     Configure the calico profile to the endpoint
     """
-    logger.info('Configuring Pod Profile: %s' % profile_name)
+    _log.info('Configuring Pod Profile: %s' % profile_name)
 
     if client.profile_exists(profile_name):
-        logger.info("Profile with name %s already exists, applying to endpoint." % (profile_name))
+        _log.info("Profile with name %s already exists, applying to endpoint." % (profile_name))
 
     else:
-        logger.info("Creating profile %s." % (profile_name))
+        _log.info("Creating profile %s." % (profile_name))
         client.create_profile(profile_name)
-        # _apply_rules(profile_name, client)
+        # _apply_default_rules(profile_name, client)
 
     # Also set the profile for the workload.
     client.set_profiles_on_endpoint(profile_names=[profile_name], 
@@ -207,7 +208,7 @@ def _create_profile(endpoint, profile_name, ip, client):
         })
     print(dump)
 
-def _create_rules(profile):
+def _create_default_rules(profile):
     """
     Create a json dict of rules for calico profiles
     """
@@ -228,7 +229,7 @@ def _create_rules(profile):
     rules = Rules.from_json(rules_json)
     return rules
 
-def _apply_rules(profile_name, client):
+def _apply_default_rules(profile_name, client):
     """
     Generate a new profile rule list and update the client
     :param profile_name: The profile to update
@@ -238,35 +239,34 @@ def _apply_rules(profile_name, client):
     try:
         profile = client.get_profile(profile_name)
     except:
-        logger.info("ERROR: Could not apply rules. Profile not found: %s, exiting" % profile_name)
+        _log.error("ERROR: Could not apply rules. Profile not found: %s, exiting" % profile_name)
         sys.exit(1)
 
-    profile.rules = _create_rules(profile_name)
+    profile.rules = _create_default_rules(profile_name)
     client.profile_update_rules(profile)
-    logger.info("Finished applying rules.")
+    _log.info("Finished applying rules.")
 
-
-def _generate_pool(client):
+def _generate_pool(client, conf_in):
     """
     Take Input subnet (global), create IP pool in datastore
     Will complete silently if it exists
     return IPPool  object of subnet pool
     """
     try:
-        subnet = INPUT_JSON['ipam']['subnet']
+        subnet = conf_in['ipam']['subnet']
     except KeyError:
-        logger.info("ERROR: Pool not specified in config")
+        _log.error("ERROR: Pool not specified in config")
         sys.exit(1)
 
     pool = IPPool(subnet)
     version = IPNetwork(subnet).version
 
     client.add_ip_pool(version, pool)
-    logger.info("Using Pool %s" % pool)
+    _log.info("Using Pool %s" % pool)
 
     return pool
 
-def _allocate_IP(pool):
+def _allocate_ip(pool):
     """
     Determine next available IP for given pool and assign it
     :param IPPool or IPNetwork pool: The pool to get assignments for.
@@ -274,16 +274,16 @@ def _allocate_IP(pool):
     :rtype IPAddress object
     """
     candidate = SequentialAssignment().allocate(pool)
-    logger.info("Using IP %s" % candidate)
+    _log.info("Using IP %s" % candidate)
     return IPAddress(candidate)
 
 if __name__ == '__main__':
-    env = os.environ.copy()
-    env[ETCD_AUTHORITY_ENV] = 'localhost:2379'  if ETCD_AUTHORITY_ENV not in env.keys() else env[ETCD_AUTHORITY_ENV]
+    ENV = os.environ.copy()
+    ENV[ETCD_AUTHORITY_ENV] = 'localhost:2379' if ETCD_AUTHORITY_ENV not in ENV.keys() else ENV[ETCD_AUTHORITY_ENV]
 
     input_ = ''.join(sys.stdin.readlines()).replace('\n', '')
     INPUT_JSON = json.loads(input_).copy()
 
-    configure_logger(logger)
+    configure_logger(_log)
         
-    main()
+    main(ENV, INPUT_JSON)

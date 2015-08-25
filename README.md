@@ -7,8 +7,9 @@ To build the calico-kubernetes plugin, clone this repository and run `make`.  Th
 The [documentation](https://github.com/coreos/rkt/blob/master/Documentation/networking.md) for Network Plugins in rkt will walk you through the basics of setting up networking in rkt.
 
 ## Requirements
-* A working [ETCD](https://github.com/coreos/etcd) service
+* A working [etcd](https://github.com/coreos/etcd) service
 * Currently, Calico is capable of networking rkt containers, but our `calico/node` image does not yet work in rkt. For now, you will need to run our `calico/node` [docker image](https://github.com/projectcalico/calico-docker/blob/master/docs/getting-started/default-networking/Demonstration.md) in parallel to your rkt images.
+	- To start calico/node, download the [calicoctl binary](https://github.com/projectcalico/calico-docker/releases) and run the following command, using the IP on your host: `calicoctl node --ip=$IP`
 
 ## Installing
 * Move the binary for this plugin to `/usr/lib/rkt/plugins/net/calico`.
