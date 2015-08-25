@@ -24,7 +24,7 @@ The [documentation](https://github.com/coreos/rkt/blob/master/Documentation/netw
     }
 }
 ```
-* When you spin up a node with `rkt run`, specify the `--private-net=network-name` flag to enable Calico Networking
+* When you spin up a container with `rkt run`, specify the `--private-net=network-name` flag to enable Calico Networking
 
 ## Networking Behavior
-In rkt deployments, Calico will allocate an available IP within the specified subnet pool and enforce the default Calico networking rules on pods. The default behavior is to allow traffic only from other containers in the network. For each network with a unique `"name"` parameter (as shown above), Calico will create a single profile that will be applied to each pod added to that network.
+In rkt deployments, Calico will allocate an available IP within the specified subnet pool and enforce the default Calico networking rules on containers. The default behavior is to allow traffic only from other containers in the network. For each network with a unique `"name"` parameter (as shown above), Calico will create a single profile that will be applied to each container added to that network.
