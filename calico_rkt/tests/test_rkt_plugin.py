@@ -19,6 +19,7 @@ import unittest
 from mock import patch, Mock, call
 from netaddr import IPAddress, IPNetwork
 from subprocess import CalledProcessError
+from pycalico.datastore_datatypes import IPPool
 import pycalico.netns
 import calico_rkt
 
@@ -189,7 +190,9 @@ class RktPluginTest(unittest.TestCase):
         autospec=True)
     @patch('calico_rkt._allocate_IP', return_value=IPAddress('1.2.3.4'),
         autospec=True)
-    def test_container_add(self, m_allocate_IP, m_host):
+    @patch('calico_rkt._generate_pool', return_value=IPPool('1.2.0.0/16'),
+        autospec=True)
+    def test_container_add(self, m_gen_pool, m_allocate_IP, m_host):
         m_client = Mock()
         m_ep = Mock()
         m_client.create_endpoint.return_value = m_ep
@@ -235,7 +238,7 @@ class RktPluginTest(unittest.TestCase):
         m_client.remove_workload.assert_called_once_with(hostname=m_host,
                                                          orchestrator_id=ORCHESTRATOR_ID,
                                                          workload_id=id_)
-        m_client.unassign_address.assert_called_once_with(IPNetwork("10.22.0.0/16"), IPAddress('1.2.3.4'))
+        m_client.unassign_address.assert_called_once_with(None, IPAddress('1.2.3.4'))
 
 
     def test_create_profile(self):
@@ -272,3 +275,11 @@ class RktPluginTest(unittest.TestCase):
         m_client.profile_exists.get_profile(p_name)
         m_create_rules.assert_called_once_with(p_name)
         m_client.profile_update_rules.assert_called_once_with(m_profile)
+    
+    @patch('calico_rkt.INPUT_JSON', json.loads(STDIN))
+    def test_generate_pool(self):
+        m_client = Mock()
+
+        calico_rkt._generate_pool(m_client)
+
+        m_client.add_ip_pool.assert_called_once_with(4, IPPool("10.22.0.0/16"))
