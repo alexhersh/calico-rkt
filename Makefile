@@ -10,7 +10,7 @@ test: ut
 
 # Build a new docker image to be used by binary or tests
 rktbuild.created: $(BUILD_FILES)
-	cd build_calico_rkt; docker build -t calico/rkt-build .
+	cd $(BUILD_DIR); docker build -t calico/rkt-build .
 	touch rktbuild.created
 
 dist/calico_rkt: rktbuild.created
