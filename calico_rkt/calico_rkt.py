@@ -15,12 +15,14 @@
 from __future__ import print_function
 import socket
 import functools
+import logging
 import json
 import os
 import sys
 from subprocess import check_output, CalledProcessError, check_call
-
 from netaddr import IPAddress, IPNetwork, AddrFormatError
+
+from logutils import configure_logger
 from pycalico import netns
 from pycalico.ipam import IPAMClient, SequentialAssignment
 from pycalico.netns import Namespace
@@ -28,7 +30,7 @@ from pycalico.datastore_datatypes import Rules, IPPool
 from pycalico.datastore import IF_PREFIX, DatastoreClient
 from pycalico.datastore_errors import PoolNotFound
 
-print_stderr = functools.partial(print, file=sys.stderr)
+logger = logging.getLogger(__name__)
 
 ETCD_AUTHORITY_ENV = 'ETCD_AUTHORITY'
 
@@ -42,17 +44,17 @@ def main():
     mode = env['CNI_COMMAND']
 
     if mode == 'init':
-        print_stderr('No initialization work to perform')
+        logger.info('No initialization work to perform')
     elif mode == 'ADD':
-        print_stderr('Executing Calico pod-creation plugin')
+        logger.info('Executing Calico pod-creation plugin')
         create(container_id=env['CNI_CONTAINERID'])
     elif mode == 'DEL':
-        print_stderr('Executing Calico pod-deletion plugin')
+        logger.info('Executing Calico pod-deletion plugin')
         delete(container_id=env['CNI_CONTAINERID'])
 
 def create(container_id):
     """"Handle rkt pod-create event."""
-    print_stderr('Configuring pod %s' % container_id)
+    logger.info('Configuring pod %s' % container_id)
     netns_path='%s/%s/%s' % (NETNS_ROOT, container_id, env['CNI_NETNS'])
     _datastore_client = IPAMClient()
 
@@ -66,14 +68,14 @@ def create(container_id):
                         ip=ip,
                         client=_datastore_client)
     except CalledProcessError as e:
-        print_stderr('Error code %d creating pod networking: %s\n%s' % (
+        logger.info('Error code %d creating pod networking: %s\n%s' % (
             e.returncode, e.output, e))
         sys.exit(1)
-    print_stderr('Finished Creating pod %s' % container_id)
+    logger.info('Finished Creating pod %s' % container_id)
 
 def delete(container_id):
     """Cleanup after a pod."""
-    print_stderr('Deleting pod %s' % container_id)
+    logger.info('Deleting pod %s' % container_id)
 
     _datastore_client = IPAMClient()
 
@@ -89,10 +91,10 @@ def delete(container_id):
     if _datastore_client.profile_exists(profile_name) and \
        len(_datastore_client.get_profile_members(profile_name)) < 1:
         try:
-            print_stderr("Profile %s is empty, removing from datastore" % profile_name)
+            logger.info("Profile %s has no members, removing from datastore" % profile_name)
             _datastore_client.remove_profile(profile_name)
         except:
-            print_stderr("ERROR: Cannot remove profile %s; Profile cannot be found." % container_id)
+            logger.info("ERROR: Cannot remove profile %s; Profile cannot be found." % container_id)
             sys.exit(1)
 
 def _create_calico_endpoint(container_id, netns_path, client):
@@ -100,7 +102,7 @@ def _create_calico_endpoint(container_id, netns_path, client):
     Configure the Calico interface for a pod.
     Return Endpoint and IP
     """
-    print_stderr('Configuring Calico networking.')
+    logger.info('Configuring Calico networking.')
 
     try:
         _ = client.get_endpoint(hostname=HOSTNAME,
@@ -110,7 +112,7 @@ def _create_calico_endpoint(container_id, netns_path, client):
         # Calico doesn't know about this container.  Continue.
         pass
     else:
-        print_stderr("This container has already been configured with Calico Networking.")
+        logger.info("This container has already been configured with Calico Networking.")
         sys.exit(1)
 
     interface = env['CNI_IFNAME']
@@ -122,7 +124,7 @@ def _create_calico_endpoint(container_id, netns_path, client):
                                   interface=interface,
                                   client=client)
 
-    print_stderr('Finished configuring network interface')
+    logger.info('Finished configuring network interface')
     return endpoint, ip
 
 def _container_add(hostname, orchestrator_id, container_id, netns_path, interface, client):
@@ -139,7 +141,7 @@ def _container_add(hostname, orchestrator_id, container_id, netns_path, interfac
         ep = client.create_endpoint(HOSTNAME, ORCHESTRATOR_ID,
                                       container_id, [ip])
     except AddrFormatError:
-        print_stderr("ERROR: This node is not configured for IPv%d. Unassigning IP "\
+        logger.info("ERROR: This node is not configured for IPv%d. Unassigning IP "\
                       "address %s then exiting."  % ip.version, ip)
         client.unassign_address(pool, ip)
         sys.exit(1)
@@ -161,15 +163,13 @@ def _container_remove(hostname, orchestrator_id, container_id, client):
                                        orchestrator_id=orchestrator_id,
                                        workload_id=container_id)
     except KeyError:
-        print_stderr("ERROR: Container %s doesn't contain any endpoints" % container_id)
+        logger.info("ERROR: Container %s doesn't contain any endpoints" % container_id)
         sys.exit(1)
-
-    pool = _generate_pool(client)
 
     # Remove any IP address assignments that this endpoint has
     for net in endpoint.ipv4_nets | endpoint.ipv6_nets:
         assert(net.size == 1)
-        client.unassign_address(pool, net.ip)
+        client.unassign_address(None, net.ip)
 
     # Remove the endpoint
     netns.remove_veth(endpoint.name)
@@ -179,19 +179,19 @@ def _container_remove(hostname, orchestrator_id, container_id, client):
                            orchestrator_id=orchestrator_id, 
                            workload_id=container_id)
 
-    print_stderr("Removed Calico interface from %s" % container_id)
+    logger.info("Removed Calico interface from %s" % container_id)
 
 def _create_profile(endpoint, profile_name, ip, client):
     """
     Configure the calico profile to the endpoint
     """
-    print_stderr('Configuring Pod Profile: %s' % profile_name)
+    logger.info('Configuring Pod Profile: %s' % profile_name)
 
     if client.profile_exists(profile_name):
-        print_stderr("Profile with name %s already exists, applying to endpoint." % (profile_name))
+        logger.info("Profile with name %s already exists, applying to endpoint." % (profile_name))
 
     else:
-        print_stderr("Creating profile %s." % (profile_name))
+        logger.info("Creating profile %s." % (profile_name))
         client.create_profile(profile_name)
         # _apply_rules(profile_name, client)
 
@@ -238,15 +238,15 @@ def _apply_rules(profile_name, client):
     try:
         profile = client.get_profile(profile_name)
     except:
-        print_stderr("ERROR: Could not apply rules. Profile not found: %s, exiting" % profile_name)
+        logger.info("ERROR: Could not apply rules. Profile not found: %s, exiting" % profile_name)
         sys.exit(1)
 
     profile.rules = _create_rules(profile_name)
     client.profile_update_rules(profile)
-    print_stderr("Finished applying rules.")
+    logger.info("Finished applying rules.")
 
 
-def _generate_pool(client, create_pool=True):
+def _generate_pool(client):
     """
     Take Input subnet (global), create IP pool in datastore
     Will complete silently if it exists
@@ -255,14 +255,14 @@ def _generate_pool(client, create_pool=True):
     try:
         subnet = INPUT_JSON['ipam']['subnet']
     except KeyError:
-        print_stderr("ERROR: Pool not specified in config")
+        logger.info("ERROR: Pool not specified in config")
         sys.exit(1)
 
     pool = IPPool(subnet)
     version = IPNetwork(subnet).version
 
     client.add_ip_pool(version, pool)
-    print_stderr("Using Pool %s" % pool)
+    logger.info("Using Pool %s" % pool)
 
     return pool
 
@@ -274,7 +274,7 @@ def _allocate_IP(pool):
     :rtype IPAddress object
     """
     candidate = SequentialAssignment().allocate(pool)
-    print_stderr("Using IP %s" % candidate)
+    logger.info("Using IP %s" % candidate)
     return IPAddress(candidate)
 
 if __name__ == '__main__':
@@ -284,4 +284,6 @@ if __name__ == '__main__':
     input_ = ''.join(sys.stdin.readlines()).replace('\n', '')
     INPUT_JSON = json.loads(input_).copy()
 
+    configure_logger(logger)
+        
     main()
