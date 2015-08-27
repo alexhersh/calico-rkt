@@ -130,22 +130,20 @@ def _create_calico_endpoint(container_id, netns_path, interface, subnet):
     _log.info('Configuring Calico networking.')
 
     try:
-        _ = datastore_client.get_endpoint(hostname=HOSTNAME,
+        endpoint = datastore_client.get_endpoint(hostname=HOSTNAME,
                                           orchestrator_id=ORCHESTRATOR_ID,
                                           workload_id=container_id)
     except KeyError:
         # Calico doesn't know about this container.  Continue.
+        endpoint = _container_add(hostname=HOSTNAME,
+                                  orchestrator_id=ORCHESTRATOR_ID,
+                                  container_id=container_id,
+                                  netns_path=netns_path,
+                                  interface=interface,
+                                  subnet=subnet)
         pass
     else:
-        _log.error("This container has already been configured with Calico Networking.")
-        sys.exit(1)
-
-    endpoint = _container_add(hostname=HOSTNAME,
-                              orchestrator_id=ORCHESTRATOR_ID,
-                              container_id=container_id,
-                              netns_path=netns_path,
-                              interface=interface,
-                              subnet=subnet)
+        _log.debug("This container has already has an Endpoint, use existing endpoint")
 
     _log.info('Finished configuring network interface')
     return endpoint
@@ -232,7 +230,9 @@ def _set_profile_on_endpoint(endpoint, profile_name):
         # _assign_default_rules(profile_name)
 
     # Also set the profile for the workload.
-    datastore_client.set_profiles_on_endpoint(profile_names=[profile_name],
+    profiles = endpoint.profile_ids
+    profiles.append(profile_name)
+    datastore_client.set_profiles_on_endpoint(profile_names=profiles,
                                               endpoint_id=endpoint.endpoint_id)
 
 
